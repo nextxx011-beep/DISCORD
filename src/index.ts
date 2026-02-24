@@ -20,15 +20,15 @@ import type {
 import SoundCloudPlugin from "@distube/soundcloud";
 import DeezerPlugin from "@distube/deezer";
 import { DirectLinkPlugin } from "@distube/direct-link";
+import ffmpegPath from "ffmpeg-static";
 
-const TOKEN = process.env.TOKEN;
+const TOKEN = process.env.DISCORD_TOKEN;
 
 export const followUp = async (
   interaction: ChatInputCommandInteraction,
   embed: EmbedBuilder,
   textChannel: GuildTextBasedChannel,
 ) => {
-  // Follow up interaction if created time is less than 15 minutes
   if (Date.now() - interaction.createdTimestamp < 15 * 60 * 1000) {
     await interaction.followUp({ embeds: [embed] });
   } else {
@@ -38,6 +38,9 @@ export const followUp = async (
 
 class DisTubeClient extends Client<true> {
   distube = new DisTube(this, {
+    ffmpeg: {
+      path: ffmpegPath as string,
+    },
     plugins: [
       new YouTubePlugin(),
       new SoundCloudPlugin(),
@@ -49,6 +52,7 @@ class DisTubeClient extends Client<true> {
     emitAddListWhenCreatingQueue: true,
     emitAddSongWhenCreatingQueue: true,
   });
+
   commands = new Collection<string, Command>();
 
   constructor(options: ClientOptions) {
@@ -58,6 +62,7 @@ class DisTubeClient extends Client<true> {
     readdirSync(join(__dirname, "events", "distube")).forEach(this.loadDisTubeEvent.bind(this));
     readdirSync(join(__dirname, "commands")).forEach(this.loadCommand.bind(this));
   }
+
   async loadCommand(name: string) {
     try {
       const CMD = await import(`./commands/${name}`);
@@ -66,23 +71,21 @@ class DisTubeClient extends Client<true> {
       console.log(`Loaded command: ${cmd.name}.`);
       return false;
     } catch (err: any) {
-      const e = `Unable to load command ${name}: ${err.stack || err}`;
-      console.error(e);
-      return e;
+      console.error(`Unable to load command ${name}: ${err.stack || err}`);
+      return err;
     }
   }
+
   async loadEvent(name: string) {
     try {
       const E = await import(`./events/client/${name}`);
       const event = new E.default(this);
-      const fn = event.run.bind(event);
-      this.on(event.name, fn);
+      this.on(event.name, event.run.bind(event));
       console.log(`Listened client event: ${event.name}.`);
       return false;
     } catch (err: any) {
-      const e = `Unable to listen "${name}" event: ${err.stack || err}`;
-      console.error(e);
-      return e;
+      console.error(`Unable to listen "${name}" event: ${err.stack || err}`);
+      return err;
     }
   }
 
@@ -90,14 +93,12 @@ class DisTubeClient extends Client<true> {
     try {
       const E = await import(`./events/distube/${name}`);
       const event = new E.default(this);
-      const fn = event.run.bind(event);
-      this.distube.on(event.name, fn);
+      this.distube.on(event.name, event.run.bind(event));
       console.log(`Listened DisTube event: ${event.name}.`);
       return false;
     } catch (err: any) {
-      const e = `Unable to listen "${name}" event: ${err.stack || err}`;
-      console.error(e);
-      return e;
+      console.error(`Unable to listen "${name}" event: ${err.stack || err}`);
+      return err;
     }
   }
 }
@@ -115,7 +116,6 @@ client.login(TOKEN);
 
 export interface Metadata {
   interaction: ChatInputCommandInteraction<"cached">;
-  // Example for strict typing
 }
 
 export abstract class Command {
@@ -125,21 +125,26 @@ export abstract class Command {
     | ContextMenuCommandBuilder
     | SlashCommandSubcommandsOnlyBuilder
     | SlashCommandOptionsOnlyBuilder;
+
   readonly client: DisTubeClient;
   readonly inVoiceChannel: boolean = false;
   readonly playing: boolean = false;
+
   constructor(client: DisTubeClient) {
     this.client = client;
   }
+
   get distube() {
     return this.client.distube;
   }
+
   abstract onChatInput(interaction: ChatInputCommandInteraction<"cached">): Awaitable<any>;
 }
 
 export abstract class ClientEvent<T extends keyof ClientEvents> {
   client: DisTubeClient;
   abstract readonly name: T;
+
   constructor(client: DisTubeClient) {
     this.client = client;
   }
@@ -149,19 +154,12 @@ export abstract class ClientEvent<T extends keyof ClientEvents> {
   }
 
   abstract run(...args: ClientEvents[T]): Awaitable<any>;
-
-  async execute(...args: ClientEvents[T]) {
-    try {
-      await this.run(...args);
-    } catch (err) {
-      console.error(err);
-    }
-  }
 }
 
 export abstract class DisTubeEvent<T extends keyof DisTubeEvents> {
   client: DisTubeClient;
   abstract readonly name: T;
+
   constructor(client: DisTubeClient) {
     this.client = client;
   }
@@ -171,12 +169,4 @@ export abstract class DisTubeEvent<T extends keyof DisTubeEvents> {
   }
 
   abstract run(...args: DisTubeEvents[T]): Awaitable<any>;
-
-  async execute(...args: DisTubeEvents[T]) {
-    try {
-      await this.run(...args);
-    } catch (err) {
-      console.error(err);
-    }
-  }
 }
